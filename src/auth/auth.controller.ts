@@ -5,14 +5,12 @@ import {
   HttpCode,
   HttpStatus,
   Post,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthDTO } from './dto';
 import { Tokens } from './dto/types/tokens.type';
-import { Request } from 'express';
-import { RTGuard } from 'src/common/guards/rt.guard';
+import { RoleAdmin, RoleUser, RTGuard } from 'src/common/guards';
 import { ATGuard } from 'src/common/guards';
 import {
   GetCurrentUser,
@@ -38,11 +36,12 @@ export class AuthController {
     return this.authService.login(dto);
   }
 
+  @UseGuards(RoleUser)
   @UseGuards(ATGuard)
   @Get('/logout')
   @HttpCode(HttpStatus.OK)
   logout(@GetCurrentUserID() userId: string) {
-    return this.authService.logout(userId);
+    // return this.authService.logout(userId);
   }
 
   @PublicRoute()

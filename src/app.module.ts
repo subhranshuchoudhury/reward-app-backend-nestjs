@@ -17,10 +17,10 @@ import { ATGuard } from './common/guards';
     AppService,
     AuthService,
     JwtService,
-    {
-      provide: APP_GUARD,
-      useClass: ATGuard,
-    },
+    // {
+    //   provide: APP_GUARD,
+    //   useClass: ATGuard,
+    // },
   ],
 })
 export class AppModule {}

@@ -19,6 +19,7 @@ model User {
   email      String       @unique
   hashedRt   String?
   usedHashes UsedHashes[]
+  role       Roles        @default(USER)
 
   @@map("users")
 }
@@ -28,4 +29,9 @@ model UsedHashes {
   hash   String
   User   User?   @relation(fields: [userId], references: [id])
   userId String?
+}
+
+enum Roles {
+  ADMIN
+  USER
 }
