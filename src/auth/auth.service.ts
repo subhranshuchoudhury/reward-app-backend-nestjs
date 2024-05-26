@@ -1,10 +1,11 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { AuthDTO } from './dto';
+import { AuthDTO, LoginDTO, RegisterDTO } from './dto';
 import * as bcrypt from 'bcrypt';
 import { Tokens } from './dto/types/tokens.type';
 import { JwtService } from '@nestjs/jwt';
@@ -15,35 +16,148 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
-  async signup(dto: AuthDTO): Promise<Tokens> {
-    const hashedPassword = await this.hashData(dto.password);
-    const newUser = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        password: hashedPassword,
-      },
-    });
+  // async signup(dto: AuthDTO): Promise<Tokens> {
+  //   const hashedPassword = await this.hashData(dto.password);
+  //   const newUser = await this.prisma.user.create({
+  //     data: {
+  //       email: dto.email,
+  //       password: hashedPassword,
+  //     },
+  //   });
 
-    const tokens = await this.getTokens(newUser.id, newUser.email);
-    await this.updateRtHash(newUser.id, tokens.refresh_token);
-    return tokens;
+  //   const tokens = await this.getTokens(newUser.id, newUser.email);
+  //   await this.updateRtHash(newUser.id, tokens.refresh_token);
+  //   return tokens;
+  // }
+
+  // async login(dto: AuthDTO): Promise<Tokens> {
+  //   const user = await this.prisma.user.findUnique({
+  //     where: {
+  //       email: dto.email,
+  //     },
+  //   });
+
+  //   if (!user) throw new ForbiddenException('user not found');
+
+  //   const isPassWordMatched = await bcrypt.compare(dto.password, user.password);
+
+  //   if (!isPassWordMatched) throw new ForbiddenException('wrong credential');
+
+  //   const tokens = await this.getTokens(user.id, user.email);
+  //   await this.updateRtHash(user.id, tokens.refresh_token);
+
+  //   return tokens;
+  // }
+
+  async register(dto: RegisterDTO) {
+    try {
+      const isUserExists = await this.prisma.user.findUnique({
+        where: { mobile: dto.mobile },
+        select: { mobile: true },
+      });
+
+      if (isUserExists) {
+        return new BadRequestException('You are already registered');
+      }
+
+      const newUser = await this.prisma.user.create({
+        data: {
+          mobile: dto.mobile,
+          name: dto.name,
+          OTP: {
+            create: {
+              sentCount: 1,
+              value: '123456',
+            },
+          },
+        },
+      });
+
+      return newUser;
+    } catch (error) {
+      return new InternalServerErrorException();
+    }
   }
 
-  async login(dto: AuthDTO): Promise<Tokens> {
+  async prelogin(dto: AuthDTO) {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { mobile: dto.mobile },
+        select: { OTP: true },
+      });
+
+      if (!user) return new ForbiddenException('user not found');
+
+      if (new Date(user.OTP?.createdAt).getDate() === new Date().getDate()) {
+        // There might a bug where if user comes after one month on the same date.
+        if (user.OTP.sentCount >= 10) {
+          await this.prisma.oTP.update({
+            where: {
+              mobile: dto.mobile,
+            },
+            data: {
+              value: null,
+            },
+          });
+
+          return new ForbiddenException(
+            'OTP sent limit exceeded. Try again tomorrow.',
+          );
+        } else {
+          await this.prisma.oTP.update({
+            where: {
+              mobile: dto.mobile,
+            },
+            data: {
+              value: '123456',
+              sentCount: { increment: 1 },
+              createdAt: new Date(),
+            },
+          });
+        }
+      } else {
+        await this.prisma.oTP.update({
+          where: {
+            mobile: dto.mobile,
+          },
+          data: {
+            value: '123456',
+            sentCount: 1,
+            createdAt: new Date(),
+          },
+        });
+      }
+    } catch (error) {
+      console.log(error);
+      return new InternalServerErrorException();
+    }
+  }
+
+  async login(dto: LoginDTO) {
     const user = await this.prisma.user.findUnique({
       where: {
-        email: dto.email,
+        mobile: dto.mobile,
+      },
+      select: { id: true, OTP: true, mobile: true },
+    });
+
+    if (!user) {
+      throw new ForbiddenException();
+    }
+
+    if (dto.otp !== user.OTP.value)
+      throw new ForbiddenException('Incorrect OTP or not found');
+
+    await this.prisma.oTP.update({
+      where: {
+        mobile: dto.mobile,
+      },
+      data: {
+        value: null,
       },
     });
 
-    if (!user) throw new ForbiddenException('user not found');
-
-    const isPassWordMatched = await bcrypt.compare(dto.password, user.password);
-
-    if (!isPassWordMatched) throw new ForbiddenException('wrong credential');
-
-    const tokens = await this.getTokens(user.id, user.email);
-    await this.updateRtHash(user.id, tokens.refresh_token);
+    const tokens = await this.getTokens(user.id, user.mobile);
 
     return tokens;
   }
@@ -127,12 +241,12 @@ export class AuthService {
     return bcrypt.hash(data, 10);
   }
 
-  async getTokens(userId: string, email: string): Promise<Tokens> {
+  async getTokens(userId: string, mobile: string): Promise<Tokens> {
     const [at, rt] = await Promise.all([
       this.jwtService.signAsync(
         {
           sub: userId,
-          email,
+          mobile,
         },
         {
           secret: 'at-secret',
@@ -142,7 +256,7 @@ export class AuthService {
       this.jwtService.signAsync(
         {
           sub: userId,
-          email,
+          mobile,
         },
         {
           secret: 'rt-secret',

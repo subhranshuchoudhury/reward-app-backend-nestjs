@@ -8,7 +8,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { AuthDTO } from './dto';
+import { AuthDTO, LoginDTO, RegisterDTO } from './dto';
 import { Tokens } from './dto/types/tokens.type';
 import { RoleAdmin, RoleUser, RTGuard } from 'src/common/guards';
 import { ATGuard } from 'src/common/guards';
@@ -23,16 +23,23 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @PublicRoute()
-  @Post('/signup')
+  @Post('/register')
   @HttpCode(HttpStatus.CREATED)
-  signup(@Body() dto: AuthDTO): Promise<Tokens> {
-    return this.authService.signup(dto);
+  signup(@Body() dto: RegisterDTO) {
+    return this.authService.register(dto);
+  }
+
+  @PublicRoute()
+  @Post('/pre-login')
+  @HttpCode(HttpStatus.OK)
+  prelogin(@Body() dto: AuthDTO) {
+    return this.authService.prelogin(dto);
   }
 
   @PublicRoute()
   @Post('/login')
   @HttpCode(HttpStatus.OK)
-  login(@Body() dto: AuthDTO): Promise<Tokens> {
+  login(@Body() dto: LoginDTO): Promise<Tokens> {
     return this.authService.login(dto);
   }
 

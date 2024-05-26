@@ -15,11 +15,13 @@ datasource db {
 
 model User {
   id         String       @id @default(uuid())
-  password   String
-  email      String       @unique
+  name       String
+  mobile     String       @unique
+  email      String?      @unique
   hashedRt   String?
   usedHashes UsedHashes[]
   role       Roles        @default(USER)
+  OTP        OTP?
 
   @@map("users")
 }
@@ -29,6 +31,18 @@ model UsedHashes {
   hash   String
   User   User?   @relation(fields: [userId], references: [id])
   userId String?
+}
+
+model OTP {
+  id        Int      @id @default(autoincrement())
+  mobile    String   @unique
+  sentCount Int?     @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  value     String?
+  User      User     @relation(fields: [mobile], references: [mobile])
+
+  @@index([mobile], name: "user_mobile_idx")
 }
 
 enum Roles {
