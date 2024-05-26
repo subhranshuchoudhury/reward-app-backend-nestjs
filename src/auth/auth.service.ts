@@ -9,6 +9,7 @@ import { AuthDTO, LoginDTO, RegisterDTO } from './dto';
 import * as bcrypt from 'bcrypt';
 import { Tokens } from './dto/types/tokens.type';
 import { JwtService } from '@nestjs/jwt';
+import otpGenerator from 'otp-generator';
 @Injectable()
 export class AuthService {
   constructor(
@@ -66,8 +67,8 @@ export class AuthService {
           name: dto.name,
           OTP: {
             create: {
-              sentCount: 1,
-              value: '123456',
+              sentCount: 0,
+              value: null,
             },
           },
         },
@@ -87,6 +88,13 @@ export class AuthService {
       });
 
       if (!user) return new ForbiddenException('user not found');
+
+      const newOTP = otpGenerator.generate(4, {
+        digits: true,
+        lowerCaseAlphabets: false,
+        upperCaseAlphabets: false,
+        specialChars: false,
+      });
 
       if (new Date(user.OTP?.createdAt).getDate() === new Date().getDate()) {
         // There might a bug where if user comes after one month on the same date.
@@ -109,9 +117,10 @@ export class AuthService {
               mobile: dto.mobile,
             },
             data: {
-              value: '123456',
+              value: newOTP,
               sentCount: { increment: 1 },
               createdAt: new Date(),
+              attempts: 0,
             },
           });
         }
@@ -121,9 +130,10 @@ export class AuthService {
             mobile: dto.mobile,
           },
           data: {
-            value: '123456',
-            sentCount: 1,
+            value: newOTP,
+            sentCount: 0,
             createdAt: new Date(),
+            attempts: 0,
           },
         });
       }
@@ -145,8 +155,29 @@ export class AuthService {
       throw new ForbiddenException();
     }
 
-    if (dto.otp !== user.OTP.value)
-      throw new ForbiddenException('Incorrect OTP or not found');
+    if (dto.otp !== user.OTP.value) {
+      if (user.OTP.attempts >= 3) {
+        await this.prisma.oTP.update({
+          where: {
+            mobile: dto.mobile,
+          },
+          data: {
+            value: null,
+          },
+        });
+        throw new ForbiddenException('OTP attempts limit exceeded');
+      } else {
+        await this.prisma.oTP.update({
+          where: {
+            mobile: dto.mobile,
+          },
+          data: {
+            attempts: { increment: 1 },
+          },
+        });
+      }
+      throw new ForbiddenException("OTP has been expired or doesn't match");
+    }
 
     await this.prisma.oTP.update({
       where: {
@@ -154,10 +185,13 @@ export class AuthService {
       },
       data: {
         value: null,
+        attempts: 0,
+        sentCount: 0,
       },
     });
 
     const tokens = await this.getTokens(user.id, user.mobile);
+    await this.updateRtHash(user.id, tokens.refresh_token);
 
     return tokens;
   }
@@ -250,7 +284,7 @@ export class AuthService {
         },
         {
           secret: 'at-secret',
-          expiresIn: '1d',
+          expiresIn: '7d',
         },
       ),
       this.jwtService.signAsync(
@@ -260,7 +294,7 @@ export class AuthService {
         },
         {
           secret: 'rt-secret',
-          expiresIn: '7 days',
+          expiresIn: '365 days',
         },
       ),
     ]);

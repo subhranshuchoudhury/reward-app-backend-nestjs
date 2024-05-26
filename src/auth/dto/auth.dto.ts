@@ -20,8 +20,8 @@ export class LoginDTO {
 
   @IsNotEmpty()
   @IsNumberString()
-  @MaxLength(6)
-  @MinLength(6)
+  @MaxLength(4)
+  @MinLength(4)
   otp: string;
 }
 export class RegisterDTO {

@@ -48,7 +48,7 @@ export class AuthController {
   @Get('/logout')
   @HttpCode(HttpStatus.OK)
   logout(@GetCurrentUserID() userId: string) {
-    // return this.authService.logout(userId);
+    return this.authService.logout(userId);
   }
 
   @PublicRoute()
