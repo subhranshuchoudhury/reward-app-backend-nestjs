@@ -39,7 +39,7 @@ export class AuthController {
   @PublicRoute()
   @Post('/login')
   @HttpCode(HttpStatus.OK)
-  login(@Body() dto: LoginDTO): Promise<Tokens> {
+  login(@Body() dto: LoginDTO) {
     return this.authService.login(dto);
   }
 

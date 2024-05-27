@@ -9,46 +9,13 @@ import { AuthDTO, LoginDTO, RegisterDTO } from './dto';
 import * as bcrypt from 'bcrypt';
 import { Tokens } from './dto/types/tokens.type';
 import { JwtService } from '@nestjs/jwt';
-import otpGenerator from 'otp-generator';
+import * as otpGenerator from 'otp-generator';
 @Injectable()
 export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
   ) {}
-
-  // async signup(dto: AuthDTO): Promise<Tokens> {
-  //   const hashedPassword = await this.hashData(dto.password);
-  //   const newUser = await this.prisma.user.create({
-  //     data: {
-  //       email: dto.email,
-  //       password: hashedPassword,
-  //     },
-  //   });
-
-  //   const tokens = await this.getTokens(newUser.id, newUser.email);
-  //   await this.updateRtHash(newUser.id, tokens.refresh_token);
-  //   return tokens;
-  // }
-
-  // async login(dto: AuthDTO): Promise<Tokens> {
-  //   const user = await this.prisma.user.findUnique({
-  //     where: {
-  //       email: dto.email,
-  //     },
-  //   });
-
-  //   if (!user) throw new ForbiddenException('user not found');
-
-  //   const isPassWordMatched = await bcrypt.compare(dto.password, user.password);
-
-  //   if (!isPassWordMatched) throw new ForbiddenException('wrong credential');
-
-  //   const tokens = await this.getTokens(user.id, user.email);
-  //   await this.updateRtHash(user.id, tokens.refresh_token);
-
-  //   return tokens;
-  // }
 
   async register(dto: RegisterDTO) {
     try {
@@ -74,7 +41,11 @@ export class AuthService {
         },
       });
 
-      return newUser;
+      return {
+        message: 'Account created successfully',
+        data: newUser,
+        status: 201,
+      };
     } catch (error) {
       return new InternalServerErrorException();
     }
@@ -111,6 +82,15 @@ export class AuthService {
           return new ForbiddenException(
             'OTP sent limit exceeded. Try again tomorrow.',
           );
+
+          // check 30 seconds delay
+        } else if (
+          user.OTP.value &&
+          new Date().getTime() - new Date(user.OTP.createdAt).getTime() < 30000
+        ) {
+          return new ForbiddenException(
+            'Please wait for 30 seconds before requesting another OTP',
+          );
         } else {
           await this.prisma.oTP.update({
             where: {
@@ -123,6 +103,11 @@ export class AuthService {
               attempts: 0,
             },
           });
+
+          return {
+            message: 'OTP sent successfully',
+            status: 200,
+          };
         }
       } else {
         await this.prisma.oTP.update({
@@ -136,6 +121,11 @@ export class AuthService {
             attempts: 0,
           },
         });
+
+        return {
+          message: 'OTP sent successfully',
+          status: 200,
+        };
       }
     } catch (error) {
       console.log(error);
@@ -148,11 +138,15 @@ export class AuthService {
       where: {
         mobile: dto.mobile,
       },
-      select: { id: true, OTP: true, mobile: true },
+      select: { id: true, OTP: true, mobile: true, name: true },
     });
 
     if (!user) {
-      throw new ForbiddenException();
+      return new ForbiddenException('user not found');
+    }
+
+    if (!user.OTP.value) {
+      return new ForbiddenException('Request OTP first');
     }
 
     if (dto.otp !== user.OTP.value) {
@@ -165,7 +159,7 @@ export class AuthService {
             value: null,
           },
         });
-        throw new ForbiddenException('OTP attempts limit exceeded');
+        return new ForbiddenException('OTP attempts limit exceeded');
       } else {
         await this.prisma.oTP.update({
           where: {
@@ -175,8 +169,8 @@ export class AuthService {
             attempts: { increment: 1 },
           },
         });
+        return new ForbiddenException("OTP didn't match. Try again.");
       }
-      throw new ForbiddenException("OTP has been expired or doesn't match");
     }
 
     await this.prisma.oTP.update({
@@ -193,7 +187,15 @@ export class AuthService {
     const tokens = await this.getTokens(user.id, user.mobile);
     await this.updateRtHash(user.id, tokens.refresh_token);
 
-    return tokens;
+    return {
+      tokens,
+      message: 'Login successful',
+      data: {
+        name: user.name,
+        mobile: user.mobile,
+        id: user.id,
+      },
+    };
   }
 
   async logout(userId: string) {
